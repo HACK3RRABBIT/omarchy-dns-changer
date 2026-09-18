@@ -33,6 +33,10 @@ panel instead of a terminal command.
 - **Ping** — not part of the original CLI (it has no latency feature): one
   parallel ICMP echo per unique server address, 1s timeout, shown next to
   each row and refreshed on open, every 5 minutes, or via **Ping all**.
+- **Font** — renders in Inter, the same typeface the DnsChanger desktop/web
+  app uses (its `index.css`: `body { font-family: Inter }`, Inter-Medium.ttf),
+  instead of the shell's bar theme font. Bundled from Google Fonts as a
+  variable font (`fonts/Inter.ttf`, SIL Open Font License — `fonts/Inter-OFL.txt`).
 
 ## How it works
 
@@ -67,7 +71,8 @@ omarchy plugin add https://github.com/HACK3RRABBIT/omarchy-dns-changer.git --ena
 Ported from [DnsChanger/dnschanger-cli](https://github.com/DnsChanger/dnschanger-cli)
 and its [server catalog](https://github.com/DnsChanger/dnsChanger-desktop).
 All server entries, defaults, and connect/disconnect/status semantics come
-from that project.
+from that project. Font: [Inter](https://github.com/rsms/inter) by The Inter
+Project Authors, SIL OFL 1.1.
 
 ## License
 

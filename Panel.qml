@@ -5,6 +5,13 @@ import qs.Ui
 import qs.Commons
 import "Model.js" as Model
 
+// Loads the same face the DnsChanger desktop/web app uses everywhere
+// (its index.css declares `body { font-family: Inter }`, Inter-Medium.ttf)
+// so the panel matches instead of falling back to the shell's bar theme
+// font. Bundled from Google Fonts (fonts/Inter.ttf, SIL OFL 1.1 —
+// fonts/Inter-OFL.txt), a variable font covering every weight the original
+// app uses.
+
 // DNS Changer popup panel — connect/disconnect/status, ported from
 // dnschanger-cli's three commands:
 //   connect  -> pick a row, type a custom address, or hit Random
@@ -16,6 +23,11 @@ Panel {
   moduleName: "io.github.hack3rrabbit.dns-changer"
   ipcTarget: "io.github.hack3rrabbit.dns-changer"
   manageIpc: false
+
+  FontLoader {
+    id: interFont
+    source: Qt.resolvedUrl("fonts/Inter.ttf")
+  }
 
   property var anchorItem: null
   property var hostWidget: null
@@ -344,7 +356,7 @@ Panel {
           textFormat: Text.PlainText
           text: Model.initials(srow.entry.name)
           color: "#ffffff"
-          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.family: interFont.name
           font.pixelSize: Style.font.caption
           font.bold: true
         }
@@ -364,7 +376,7 @@ Panel {
           elide: Text.ElideRight
           text: (srow.isCurrent ? "● " : "") + srow.entry.name
           color: srow.isCurrent ? root.connectedColor : srow.foreground
-          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.family: interFont.name
           font.pixelSize: Style.font.body
           font.bold: srow.isCurrent
         }
@@ -375,7 +387,7 @@ Panel {
           elide: Text.ElideRight
           text: Model.tagList(srow.entry.tags) + (srow.pingText !== "" ? "  ·  " + srow.pingText : "")
           color: srow.pingMs === null ? Color.urgent : Qt.darker(srow.foreground, 1.5)
-          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.family: interFont.name
           font.pixelSize: Style.font.caption
         }
       }
@@ -434,7 +446,7 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
               text: "DNS Changer"
               color: root.barForeground
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.family: interFont.name
               font.pixelSize: Style.font.title
               font.bold: true
             }
@@ -473,7 +485,7 @@ Panel {
               return "Connected to an unknown server  (" + root.activeIps.join(", ") + ")"
             }
             color: root.status.state === "off" ? Qt.darker(root.barForeground, 1.4) : root.barForeground
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.family: interFont.name
             font.pixelSize: Style.font.bodySmall
           }
 
@@ -484,7 +496,7 @@ Panel {
             wrapMode: Text.Wrap
             text: root.errorText !== "" ? ("⚠ " + root.errorText) : root.message
             color: root.errorText !== "" ? Color.urgent : Qt.darker(root.barForeground, 1.2)
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.family: interFont.name
             font.pixelSize: Style.font.caption
           }
 

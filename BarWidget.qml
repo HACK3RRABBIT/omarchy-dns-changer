@@ -17,6 +17,14 @@ BarWidget {
   id: root
   moduleName: "io.github.hack3rrabbit.dns-changer"
 
+  // Same face the DnsChanger desktop/web app uses (its index.css: `body {
+  // font-family: Inter }`, Inter-Medium.ttf) instead of the shell's bar
+  // theme font. Bundled from Google Fonts, SIL OFL 1.1 (fonts/Inter-OFL.txt).
+  FontLoader {
+    id: interFont
+    source: Qt.resolvedUrl("fonts/Inter.ttf")
+  }
+
   property var panelLoader: null
 
   // Mirrored from the panel's poller so the pill renders without the panel
@@ -102,7 +110,7 @@ BarWidget {
     text: root.label
     labelVisible: true
     hasVisualContent: text !== ""
-    fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+    fontFamily: interFont.name
     fontSize: Style.font.bodySmall
     foreground: root.pillColor
     useActiveColor: false
