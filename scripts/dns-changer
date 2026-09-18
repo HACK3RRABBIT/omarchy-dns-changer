@@ -20,8 +20,13 @@
 #   dns-changer disconnect             -> same shape, servers = the CLI's defaults
 #   dns-changer flush                  -> { ok }
 #   dns-changer fetch-servers          -> the DnsChanger server catalog, sorted by rate desc
+#   dns-changer ping <ip> [ip...]      -> { ok, results: { ip: ms|null, ... } }
 #
-# Dependencies: curl, jq, pkexec.
+# `ping` is a plugin addition (not part of the original CLI, which has no
+# latency feature): one ICMP echo per address, run in parallel with a 1s
+# timeout, so pinging the whole catalog stays fast even on a cold link.
+#
+# Dependencies: curl, jq, pkexec, ping (iputils).
 
 set -o pipefail
 
@@ -104,11 +109,51 @@ cmd_fetch_servers() {
   printf '%s' "$raw" | jq -c 'sort_by(-.rate)'
 }
 
+# One `ping -c 1 -W 1` per address, fired in parallel and collected via a
+# per-address temp file (command substitution inside a backgrounded subshell
+# can't be joined any other way without races — same rationale as
+# fetch-chand's resolve_to_file).
+cmd_ping() {
+  local ips=("$@")
+  if [ "${#ips[@]}" -eq 0 ]; then
+    printf '{"ok":true,"results":{}}\n'
+    return
+  fi
+
+  local tmpdir; tmpdir="$(mktemp -d)"
+  local ip slot pids=()
+  for ip in "${ips[@]}"; do
+    slot="$tmpdir/$(printf '%s' "$ip" | tr -c '0-9A-Za-z' '_')"
+    (
+      ping -c 1 -W 1 "$ip" 2>/dev/null \
+        | awk -F'time=' '/time=/ { split($2, a, " "); print a[1]; exit }' \
+        > "$slot"
+    ) &
+    pids+=("$!")
+  done
+  local pid
+  for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null; done
+
+  local json="{}" val
+  for ip in "${ips[@]}"; do
+    slot="$tmpdir/$(printf '%s' "$ip" | tr -c '0-9A-Za-z' '_')"
+    val="$(cat "$slot" 2>/dev/null)"
+    if [[ "$val" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+      json="$(printf '%s' "$json" | jq -c --arg ip "$ip" --argjson v "$val" '. + {($ip): $v}')"
+    else
+      json="$(printf '%s' "$json" | jq -c --arg ip "$ip" '. + {($ip): null}')"
+    fi
+  done
+  rm -rf "$tmpdir"
+  printf '{"ok":true,"results":%s}\n' "$json"
+}
+
 case "${1:-}" in
   active)        cmd_active ;;
   connect)       shift; cmd_connect "$@" ;;
   disconnect)    cmd_disconnect ;;
   flush)         cmd_flush ;;
   fetch-servers) cmd_fetch_servers ;;
-  *) die "usage: dns-changer active | connect <ip> [ip2] | disconnect | flush | fetch-servers" ;;
+  ping)          shift; cmd_ping "$@" ;;
+  *) die "usage: dns-changer active | connect <ip> [ip2] | disconnect | flush | fetch-servers | ping <ip>..." ;;
 esac

@@ -38,12 +38,18 @@ Panel {
   property string customText: ""
   property int cursor: 0
 
+  // ip -> latency in ms, or null for a timeout. Not part of the original
+  // CLI (it has no ping feature) — a plugin addition, keyed by address so
+  // servers sharing an address (several catalog entries do) share a result.
+  property var pingResults: ({})
+
   onOpenedChanged: if (root.opened) Qt.callLater(function() { customField.text = root.customText })
 
   function open() {
     root.controller.show()
     root.refresh()
     root.fetchServers()
+    root.pingServers()
   }
 
   // ---- persistence: last-known active DNS, so the bar pill and header
@@ -157,6 +163,21 @@ Panel {
     flushProc.running = true
   }
 
+  // Pings each catalog server's first address once (deduped — several
+  // entries share an address). Not part of the original CLI.
+  function pingServers() {
+    if (pingProc.running) return
+    var seen = {}
+    var ips = []
+    for (var i = 0; i < root.servers.length; i++) {
+      var ip = root.servers[i].servers[0]
+      if (ip && !seen[ip]) { seen[ip] = true; ips.push(ip) }
+    }
+    if (ips.length === 0) return
+    pingProc.command = [root.scriptPath, "ping"].concat(ips)
+    pingProc.running = true
+  }
+
   function moveCursor(d) {
     if (root.servers.length === 0) return
     root.cursor = Math.max(0, Math.min(root.servers.length - 1, root.cursor + d))
@@ -243,6 +264,28 @@ Panel {
           if (Array.isArray(parsed) && parsed.length) {
             root.servers = Model.sortByRate(parsed)
             root.persistServers()
+            root.pingServers()
+          }
+        } catch (e) {}
+      }
+    }
+  }
+
+  Process {
+    id: pingProc
+    running: false
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var raw = String(text || "").trim()
+        if (!raw) return
+        try {
+          var parsed = JSON.parse(raw)
+          if (parsed && parsed.ok && parsed.results) {
+            var merged = {}
+            for (var k in root.pingResults) merged[k] = root.pingResults[k]
+            for (var k2 in parsed.results) merged[k2] = parsed.results[k2]
+            root.pingResults = merged
           }
         } catch (e) {}
       }
@@ -254,7 +297,7 @@ Panel {
     running: true
     repeat: true
     triggeredOnStart: false
-    onTriggered: root.refresh()
+    onTriggered: { root.refresh(); root.pingServers() }
   }
 
   // ================= UI =================
@@ -264,6 +307,10 @@ Panel {
     required property int index
 
     readonly property bool isCurrent: root.status.state === "known" && root.status.server && root.status.server.key === entry.key
+    readonly property string primaryAddress: (entry.servers && entry.servers[0]) || ""
+    readonly property var pingMs: root.pingResults[primaryAddress]
+    readonly property string pingText: Model.formatPing(pingMs)
+    readonly property var badge: Model.badgeHsla(entry.key)
 
     width: mainColumn.width
     height: rowInner.implicitHeight + Style.space(12)
@@ -272,34 +319,65 @@ Panel {
     foreground: root.barForeground
     currentFill: Style.selectedFillFor(root.barForeground, Color.accent)
 
-    Column {
+    Item {
       id: rowInner
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
       anchors.leftMargin: Style.space(10)
       anchors.rightMargin: Style.space(10)
-      spacing: Style.space(1)
+      height: Math.max(avatar.height, textCol.implicitHeight)
 
-      Text {
-        textFormat: Text.PlainText
-        width: parent.width
-        elide: Text.ElideRight
-        text: (srow.isCurrent ? "● " : "") + srow.entry.name
-        color: srow.isCurrent ? root.connectedColor : srow.foreground
-        font.family: root.bar ? root.bar.fontFamily : Style.font.family
-        font.pixelSize: Style.font.body
-        font.bold: srow.isCurrent
+      // Generated monogram badge — no third-party provider logos are
+      // bundled or reproduced (see Model.badgeHsla).
+      Rectangle {
+        id: avatar
+        width: Style.space(24)
+        height: Style.space(24)
+        radius: width / 2
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        color: Qt.hsla(srow.badge.h, srow.badge.s, srow.badge.l, srow.badge.a)
+
+        Text {
+          anchors.centerIn: parent
+          textFormat: Text.PlainText
+          text: Model.initials(srow.entry.name)
+          color: "#ffffff"
+          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.caption
+          font.bold: true
+        }
       }
-      Text {
-        textFormat: Text.PlainText
-        visible: text !== ""
-        width: parent.width
-        elide: Text.ElideRight
-        text: Model.tagList(srow.entry.tags)
-        color: Qt.darker(srow.foreground, 1.5)
-        font.family: root.bar ? root.bar.fontFamily : Style.font.family
-        font.pixelSize: Style.font.caption
+
+      Column {
+        id: textCol
+        anchors.left: avatar.right
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: Style.space(8)
+        spacing: Style.space(1)
+
+        Text {
+          textFormat: Text.PlainText
+          width: parent.width
+          elide: Text.ElideRight
+          text: (srow.isCurrent ? "● " : "") + srow.entry.name
+          color: srow.isCurrent ? root.connectedColor : srow.foreground
+          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.body
+          font.bold: srow.isCurrent
+        }
+        Text {
+          textFormat: Text.PlainText
+          visible: text !== ""
+          width: parent.width
+          elide: Text.ElideRight
+          text: Model.tagList(srow.entry.tags) + (srow.pingText !== "" ? "  ·  " + srow.pingText : "")
+          color: srow.pingMs === null ? Color.urgent : Qt.darker(srow.foreground, 1.5)
+          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.caption
+        }
       }
     }
 
@@ -483,6 +561,13 @@ Panel {
               enabled: !root.busy && root.status.state !== "off"
               foreground: root.barForeground
               onClicked: root.disconnect()
+            }
+            Button {
+              text: "Ping all"
+              bordered: true
+              enabled: !pingProc.running
+              foreground: root.barForeground
+              onClicked: root.pingServers()
             }
           }
         }

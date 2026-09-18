@@ -134,3 +134,46 @@ function statusOf(activeIps, servers) {
 function tagList(tags) {
   return (tags || []).join(" · ")
 }
+
+// --- Provider badges ---------------------------------------------------------
+//
+// The CLI's Server interface has no logo field (the desktop app's DB has
+// `avatar` filenames, but those PNGs aren't bundled here — their license
+// wasn't checked, and several are third-party trademarks). Instead each
+// server gets a small generated monogram badge: a deterministic color
+// (hashed from its key, so it's stable across reloads) plus its initials.
+// No third-party artwork is reproduced.
+
+function initials(name) {
+  var s = String(name || "").trim()
+  if (!s) return "?"
+  if (s.indexOf("custom-") === 0) return "C"
+  var parts = s.split(/\s+/).filter(function (p) { return p.length > 0 })
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return s.slice(0, 2).toUpperCase()
+}
+
+function hashString(s) {
+  var h = 0
+  s = String(s || "")
+  for (var i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0
+  return Math.abs(h)
+}
+
+// Returns { h, s, l, a } for Qt.hsla(...) — kept as plain numbers (not a
+// QML color) so this file stays free of QML/Quickshell types.
+function badgeHsla(key) {
+  var hue = (hashString(key) % 360) / 360
+  return { h: hue, s: 0.5, l: 0.42, a: 1 }
+}
+
+// --- Ping ----------------------------------------------------------------
+//
+// Not part of the original CLI (it has no latency feature) — a plugin
+// addition. `ms` is undefined (not yet pinged), null (timed out /
+// unreachable), or a number.
+function formatPing(ms) {
+  if (ms === undefined) return ""
+  if (ms === null) return "timeout"
+  return Math.round(ms) + " ms"
+}

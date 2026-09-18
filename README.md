@@ -16,7 +16,10 @@ panel instead of a terminal command.
   Cloudflare, Google, Quad9, OpenDNS, gaming and Fivem DNS, anti-sanction DNS,
   ad blockers, ...), sorted by rating, fetched live from the same store the
   desktop app uses and cached locally, with a bundled snapshot as an offline
-  fallback. Click a row to connect — mirrors `d11i connect -n <name>`.
+  fallback. Each row shows a generated monogram badge (a deterministic color +
+  initials — no third-party logos are bundled or reproduced) and its live
+  ping in ms, refreshed on open, on a 5-minute timer, or via **Ping all**.
+  Click a row to connect — mirrors `d11i connect -n <name>`.
 - **Custom server** — type one or two addresses (comma-separated) and connect —
   mirrors `d11i connect -s <ip1>,<ip2>`, including the exact same validation
   and the "unlisted address becomes a `custom-<ip>` entry" behavior.
@@ -27,6 +30,9 @@ panel instead of a terminal command.
 - **Flush DNS cache** — exposes the platform's `flushDns()`, which exists in
   the original CLI's codebase but isn't wired to any of its commands; here
   it's a real button.
+- **Ping** — not part of the original CLI (it has no latency feature): one
+  parallel ICMP echo per unique server address, 1s timeout, shown next to
+  each row and refreshed on open, every 5 minutes, or via **Ping all**.
 
 ## How it works
 
@@ -40,6 +46,7 @@ panel instead of a terminal command.
 - `flush` — flushes the resolver cache (`resolvectl` / `systemd-resolve`)
 - `fetch-servers` — pulls the live server catalog from the same
   `dnsChanger-desktop` store the CLI/desktop app use
+- `ping <ip>...` — one `ping -c 1 -W 1` per address, run in parallel
 
 The panel drives this script via Quickshell's `Process`, and caches the
 server list and last-known DNS state under `~/.cache/omarchy-dns-changer/` so
@@ -53,7 +60,7 @@ omarchy plugin add https://github.com/HACK3RRABBIT/omarchy-dns-changer.git --ena
 
 ## Requirements
 
-`curl`, `jq`, and `pkexec` (polkit) on the system running the plugin.
+`curl`, `jq`, `pkexec` (polkit), and `ping` (iputils) on the system running the plugin.
 
 ## Credits
 
