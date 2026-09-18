@@ -1,0 +1,12 @@
+# OS / editor
+.DS_Store
+*.swp
+*~
+
+# Local runtime cache — the plugin writes here at runtime, not part of source.
+.cache/
+
+# Node / python (we use none, but guard anyway)
+node_modules/
+__pycache__/
+*.pyc

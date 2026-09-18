@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+#
+# dns-changer — privileged DNS helper for the Omarchy DNS Changer bar plugin.
+#
+# Mirrors the Linux backend of github.com/DnsChanger/dnschanger-cli
+# (src/platforms/linux/linux.platform.ts) as closely as an unsandboxed
+# Quickshell plugin can call it:
+#
+#   setDns()    -> write /etc/resolv.conf, restart systemd-networkd
+#   clearDns()  -> setDns(["1.1.1.1","8.8.8.8","192.168.1.1","127.0.0.1"])
+#   getActiveDns() -> grep nameserver /etc/resolv.conf
+#   flushDns()  -> systemd-resolve --flush-caches (resolvectl on modern systemd)
+#
+# The original CLI shells out through `sudo-prompt`, which on Linux resolves
+# to a graphical polkit/pkexec prompt; we use pkexec directly for the same
+# one-shot elevation, once per privileged action.
+#
+#   dns-changer active                 -> { ok, servers:[ip, ...] }
+#   dns-changer connect <ip> [ip2]     -> { ok, servers:[...] } | { ok:false, error }
+#   dns-changer disconnect             -> same shape, servers = the CLI's defaults
+#   dns-changer flush                  -> { ok }
+#   dns-changer fetch-servers          -> the DnsChanger server catalog, sorted by rate desc
+#
+# Dependencies: curl, jq, pkexec.
+
+set -o pipefail
+
+STORE_URL="https://raw.githubusercontent.com/DnsChanger/dnsChanger-desktop/store/servers_DB.json"
+DEFAULT_DNS=(1.1.1.1 8.8.8.8 192.168.1.1 127.0.0.1)
+CACHE_DIR="${DNS_CHANGER_CACHE_DIR:-$HOME/.cache/omarchy-dns-changer}"
+mkdir -p "$CACHE_DIR" 2>/dev/null || true
+
+die() {
+  printf '{"ok":false,"error":%s}\n' "$(jq -nc --arg m "$1" '$m')" >&2
+  printf '{"ok":false,"error":%s}\n' "$(jq -nc --arg m "$1" '$m')"
+  exit 0
+}
+
+is_valid_ip() {
+  [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
+}
+
+ips_to_json() {
+  # $@ -> compact JSON array of strings (empty array for no args).
+  if [ "$#" -eq 0 ]; then
+    printf '[]'
+    return
+  fi
+  printf '%s\n' "$@" | jq -R . | jq -sc .
+}
+
+cmd_active() {
+  local ips=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && ips+=("$line")
+  done < <(grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}')
+  printf '{"ok":true,"servers":%s}\n' "$(ips_to_json "${ips[@]}")"
+}
+
+# apply_dns <ip> [ip2 ...] — validates, writes /etc/resolv.conf as root via
+# pkexec, restarts systemd-networkd, then flushes the resolver cache. The
+# nameserver block is passed as $1 inside the elevated shell (not
+# interpolated into the script text) so nothing here depends on shell
+# quoting of externally-derived data.
+apply_dns() {
+  local ips=("$@") lines="" i
+  [ "${#ips[@]}" -eq 0 ] && die "connect requires at least one DNS address"
+  for i in "${ips[@]}"; do
+    is_valid_ip "$i" || die "invalid DNS address: $i"
+    lines+="nameserver ${i}"$'\n'
+  done
+
+  # Matches setDns() exactly: write resolv.conf, restart systemd-networkd.
+  # No cache flush here — the CLI's setDns() doesn't call flushDns() either
+  # (flushDns exists on the platform/service layer but isn't wired to any
+  # CLI command); this plugin exposes it separately via `flush`/the panel's
+  # flush-cache button instead.
+  pkexec sh -c '
+    printf "%s" "$1" > /etc/resolv.conf &&
+    { systemctl restart systemd-networkd 2>/dev/null || true; }
+  ' _ "$lines" || die "failed to apply DNS (cancelled or command failed)"
+
+  printf '{"ok":true,"servers":%s}\n' "$(ips_to_json "${ips[@]}")"
+}
+
+cmd_connect() {
+  apply_dns "$@"
+}
+
+cmd_disconnect() {
+  apply_dns "${DEFAULT_DNS[@]}"
+}
+
+cmd_flush() {
+  pkexec sh -c 'resolvectl flush-caches 2>/dev/null || systemd-resolve --flush-caches 2>/dev/null || true' \
+    || die "failed to flush DNS cache"
+  printf '{"ok":true}\n'
+}
+
+cmd_fetch_servers() {
+  local raw
+  raw="$(curl -fsS --max-time 12 "$STORE_URL" 2>/dev/null)" || die "could not reach the server list"
+  printf '%s' "$raw" | jq -e 'type == "array"' >/dev/null 2>&1 || die "unexpected server list format"
+  printf '%s' "$raw" | jq -c 'sort_by(-.rate)'
+}
+
+case "${1:-}" in
+  active)        cmd_active ;;
+  connect)       shift; cmd_connect "$@" ;;
+  disconnect)    cmd_disconnect ;;
+  flush)         cmd_flush ;;
+  fetch-servers) cmd_fetch_servers ;;
+  *) die "usage: dns-changer active | connect <ip> [ip2] | disconnect | flush | fetch-servers" ;;
+esac
