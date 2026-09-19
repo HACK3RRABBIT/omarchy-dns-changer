@@ -170,6 +170,57 @@ domain_slug() {
 # Fetches, hash-checks against the placeholder, and caches one domain's
 # favicon; writes the local path to $2 only for a genuine icon (leaves $2
 # absent/empty otherwise). Runs backgrounded per-domain in cmd_favicons.
+BROWSER_UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# Tier 2: some sites (verified: asiatech.ir) aren't in DuckDuckGo's crawl at
+# all but serve their own favicon fine — fetch the homepage with a browser
+# User-Agent (plain curl gets 307-looped by at least one site's bot
+# mitigation) and use whatever <link rel=icon> it declares.
+extract_icon_url() {
+  python3 -c '
+import re, sys
+from urllib.parse import urljoin
+try:
+    html = open(sys.argv[1], "r", errors="ignore").read()
+except OSError:
+    sys.exit(0)
+base = sys.argv[2]
+for tag in re.findall(r"<link[^>]+rel=[\"\x27]?(?:shortcut )?icon[\"\x27]?[^>]*>", html, re.I):
+    m = re.search(r"href=[\"\x27]([^\"\x27]+)[\"\x27]", tag, re.I)
+    if m:
+        print(urljoin(base, m.group(1)))
+        break
+' "$1" "$2" 2>/dev/null
+}
+
+# Fetches $1 into $2, accepting it only if it's actually image data (a
+# site's HTML error page saved under an image-looking URL would otherwise
+# get cached and shown as an icon).
+fetch_image_url() {
+  curl -fsSL -A "$BROWSER_UA" --max-time 8 "$1" -o "$2" 2>/dev/null || return 1
+  [ -s "$2" ] || return 1
+  file --mime-type -b "$2" 2>/dev/null | grep -q '^image/' || return 1
+  return 0
+}
+
+fetch_favicon_from_site() {
+  local domain="$1" out="$2" base="https://${1}/"
+  local html; html="$(mktemp)"
+  if curl -fsSL -A "$BROWSER_UA" --max-time 8 "$base" -o "$html" 2>/dev/null; then
+    local iconurl; iconurl="$(extract_icon_url "$html" "$base")"
+    rm -f "$html"
+    if [ -n "$iconurl" ] && fetch_image_url "$iconurl" "$out"; then
+      return 0
+    fi
+  else
+    rm -f "$html"
+  fi
+  # Last resort: the conventional /favicon.ico location, in case the site's
+  # own <link rel=icon> is missing or stale (verified: dns.watch declares
+  # one that itself 404s).
+  fetch_image_url "${base}favicon.ico" "$out"
+}
+
 fetch_one_favicon() {
   local domain="$1" resultfile="$2"
   local slug; slug="$(domain_slug "$domain")"
@@ -188,6 +239,12 @@ fetch_one_favicon() {
     fi
   fi
   rm -f "$tmp"
+
+  if fetch_favicon_from_site "$domain" "$cached"; then
+    printf '%s' "$cached" >"$resultfile"
+    return
+  fi
+  rm -f "$cached"
 }
 
 cmd_favicons() {
