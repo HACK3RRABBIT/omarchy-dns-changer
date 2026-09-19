@@ -104,7 +104,7 @@ Panel {
       var raw = String(serversFile.text() || "").trim()
       if (!raw) return
       var list = JSON.parse(raw)
-      if (Array.isArray(list) && list.length) root.servers = Model.sortByRate(list)
+      if (Array.isArray(list) && list.length) root.servers = Model.attachDomains(Model.sortByRate(list))
     } catch (e) {}
   }
   function pushStatusToHost() {
@@ -274,7 +274,7 @@ Panel {
         try {
           var parsed = JSON.parse(raw)
           if (Array.isArray(parsed) && parsed.length) {
-            root.servers = Model.sortByRate(parsed)
+            root.servers = Model.attachDomains(Model.sortByRate(parsed))
             root.persistServers()
             root.pingServers()
           }
@@ -323,6 +323,11 @@ Panel {
     readonly property var pingMs: root.pingResults[primaryAddress]
     readonly property string pingText: Model.formatPing(pingMs)
     readonly property var badge: Model.badgeHsla(entry.key)
+    readonly property string faviconUrl: Model.faviconUrl(entry.domain)
+    // Real favicon (fetched at request time, never bundled) for the
+    // well-known providers Model.DOMAIN_BY_KEY covers; anything else, or a
+    // failed/slow load, falls back to the generated badge below.
+    property bool faviconFailed: false
 
     width: mainColumn.width
     height: rowInner.height + Style.space(12)
@@ -340,10 +345,28 @@ Panel {
       anchors.rightMargin: Style.space(10)
       height: Math.max(avatar.height, textCol.implicitHeight)
 
-      // Generated monogram badge — no third-party provider logos are
-      // bundled or reproduced (see Model.badgeHsla).
+      // Real favicon for well-known providers, fetched at request time from
+      // a third-party icon service — nothing is bundled or redistributed.
+      Image {
+        id: favicon
+        visible: srow.faviconUrl !== "" && !srow.faviconFailed && status === Image.Ready
+        width: Style.space(24)
+        height: Style.space(24)
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        source: srow.faviconUrl
+        asynchronous: true
+        smooth: true
+        fillMode: Image.PreserveAspectFit
+        onStatusChanged: if (status === Image.Error) srow.faviconFailed = true
+      }
+
+      // Fallback generated monogram badge — shown whenever there's no known
+      // domain for this provider, or its favicon failed/hasn't loaded yet
+      // (no third-party logos are bundled or reproduced; see Model.badgeHsla).
       Rectangle {
         id: avatar
+        visible: !favicon.visible
         width: Style.space(24)
         height: Style.space(24)
         radius: width / 2

@@ -16,10 +16,16 @@ panel instead of a terminal command.
   Cloudflare, Google, Quad9, OpenDNS, gaming and Fivem DNS, anti-sanction DNS,
   ad blockers, ...), sorted by rating, fetched live from the same store the
   desktop app uses and cached locally, with a bundled snapshot as an offline
-  fallback. Each row shows a generated monogram badge (a deterministic color +
-  initials — no third-party logos are bundled or reproduced) and its live
-  ping in ms, refreshed on open, on a 5-minute timer, or via **Ping all**.
-  Click a row to connect — mirrors `d11i connect -n <name>`.
+  fallback. Each row shows a provider icon and its live ping in ms, refreshed
+  on open, on a 5-minute timer, or via **Ping all**. For well-known providers
+  with a public site (Cloudflare, Google, Quad9, OpenDNS, Yandex, AdGuard,
+  Norton, Level3, UltraDNS, CleanBrowsing, ControlD, dns0.eu — see
+  `Model.DOMAIN_BY_KEY`) that's their real favicon, fetched at request time
+  from DuckDuckGo's icon service — nothing is bundled or redistributed. Every
+  other provider (the regional/gaming/niche entries have no identifiable
+  official site), and any favicon that fails to load, falls back to a
+  generated monogram badge (a deterministic color + initials). Click a row to
+  connect — mirrors `d11i connect -n <name>`.
 - **Custom server** — type one or two addresses (comma-separated) and connect —
   mirrors `d11i connect -s <ip1>,<ip2>`, including the exact same validation
   and the "unlisted address becomes a `custom-<ip>` entry" behavior.

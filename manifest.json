@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.hack3rrabbit.dns-changer",
   "name": "DNS Changer",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "HACK3RRABBIT",
   "description": "Switch your system DNS from the Omarchy bar. Pick from a curated, rate-sorted server list (Shecan, Cloudflare, Google, Quad9, gaming and anti-sanction DNS, ...) with live ping and provider badges, connect to a custom address, go random, or disconnect back to the defaults. A faithful Omarchy port of the DNS Changer CLI/desktop app.",
   "license": "MIT",

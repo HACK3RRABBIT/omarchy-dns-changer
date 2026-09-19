@@ -62,12 +62,56 @@ var BUNDLED_SERVERS = [
   { key: "dns0.eu", name: "dns0.eu", servers: ["193.110.81.0", "185.253.5.0"], rate: 0, tags: ["Web"] }
 ]
 
+// Official domain for servers whose provider is a well-known service with a
+// recognizable public site — used to show a real favicon instead of a
+// generated badge (see faviconUrl below). Not part of the CLI's Server
+// interface; keyed by catalog `key` so it survives a live fetch-servers
+// refresh (whose payload has no domain field) via attachDomains().
+// Deliberately does NOT cover the regional/gaming/niche entries (Shecan,
+// Zeus DNS, Electro Team, Fivem_*, ...) — no identifiable official site to
+// point at, so those keep the generated badge.
+var DOMAIN_BY_KEY = {
+  ClOUD_FLARE: "cloudflare.com",
+  GOOGLE: "google.com",
+  QUAD9: "quad9.net",
+  OPENDNS: "opendns.com",
+  YANDEX: "yandex.com",
+  AdGuard: "adguard.com",
+  COMODO: "comodo.com",
+  NOROTON: "norton.com",
+  LEVEL3: "level3.com",
+  ULTRADNS: "ultradns.com",
+  DNSWATCH: "dns.watch",
+  CleanBrowsing_Adult_Filter: "cleanbrowsing.org",
+  "ControlD-Ads": "controld.com",
+  "dns0.eu": "dns0.eu"
+}
+
+function attachDomains(list) {
+  return (list || []).map(function (s) {
+    var domain = DOMAIN_BY_KEY[s.key]
+    if (!domain) return s
+    var copy = {}
+    for (var k in s) copy[k] = s[k]
+    copy.domain = domain
+    return copy
+  })
+}
+
+// DuckDuckGo's icon service: fetched at request time, nothing bundled or
+// redistributed. Chosen over Google's equivalent service since a DNS
+// picker is a poor place to also hand Google a log of which providers a
+// user is browsing.
+function faviconUrl(domain) {
+  return domain ? ("https://icons.duckduckgo.com/ip3/" + domain + ".ico") : ""
+}
+
 function sortByRate(list) {
   return (list || []).slice().sort(function (a, b) { return (b.rate || 0) - (a.rate || 0) })
 }
 
 function bundledServers() {
-  return sortByRate(BUNDLED_SERVERS)
+  return attachDomains(sortByRate(BUNDLED_SERVERS))
 }
 
 // dns.validator.ts: isValidDnsAddress — plain dotted-quad shape check, no
