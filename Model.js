@@ -64,12 +64,14 @@ var BUNDLED_SERVERS = [
 
 // Official domain for servers whose provider is a well-known service with a
 // recognizable public site — used to show a real favicon instead of a
-// generated badge (see faviconUrl below). Not part of the CLI's Server
-// interface; keyed by catalog `key` so it survives a live fetch-servers
-// refresh (whose payload has no domain field) via attachDomains().
-// Deliberately does NOT cover the regional/gaming/niche entries (Shecan,
-// Zeus DNS, Electro Team, Fivem_*, ...) — no identifiable official site to
-// point at, so those keep the generated badge.
+// generated badge. The actual fetch (and rejecting DuckDuckGo's generic
+// placeholder for a domain with no real icon — see scripts/dns-changer's
+// header comment) happens in scripts/dns-changer favicons, not here. Not
+// part of the CLI's Server interface; keyed by catalog `key` so it survives
+// a live fetch-servers refresh (whose payload has no domain field) via
+// attachDomains(). Deliberately does NOT cover the regional/gaming/niche
+// entries with no identifiable official site (Zeus DNS, Electro Team,
+// Fivem_*, ...) — those keep the generated badge unconditionally.
 var DOMAIN_BY_KEY = {
   ClOUD_FLARE: "cloudflare.com",
   GOOGLE: "google.com",
@@ -84,7 +86,13 @@ var DOMAIN_BY_KEY = {
   DNSWATCH: "dns.watch",
   CleanBrowsing_Adult_Filter: "cleanbrowsing.org",
   "ControlD-Ads": "controld.com",
-  "dns0.eu": "dns0.eu"
+  "dns0.eu": "dns0.eu",
+  // Verified live (curl'd each, 2026-09-19) — real Iranian companies/services
+  // with an unambiguous official site, not community DNS lists.
+  SHECAN: "shecan.ir",
+  ASIA_TECH: "asiatech.ir",
+  Shatel: "shatel.ir",
+  Irancell: "irancell.ir"
 }
 
 function attachDomains(list) {
@@ -96,14 +104,6 @@ function attachDomains(list) {
     copy.domain = domain
     return copy
   })
-}
-
-// DuckDuckGo's icon service: fetched at request time, nothing bundled or
-// redistributed. Chosen over Google's equivalent service since a DNS
-// picker is a poor place to also hand Google a log of which providers a
-// user is browsing.
-function faviconUrl(domain) {
-  return domain ? ("https://icons.duckduckgo.com/ip3/" + domain + ".ico") : ""
 }
 
 function sortByRate(list) {

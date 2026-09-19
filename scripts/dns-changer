@@ -21,19 +21,34 @@
 #   dns-changer flush                  -> { ok }
 #   dns-changer fetch-servers          -> the DnsChanger server catalog, sorted by rate desc
 #   dns-changer ping <ip> [ip...]      -> { ok, results: { ip: ms|null, ... } }
+#   dns-changer favicons <domain>...   -> { ok, results: { domain: path|null, ... } }
 #
-# `ping` is a plugin addition (not part of the original CLI, which has no
-# latency feature): one ICMP echo per address, run in parallel with a 1s
-# timeout, so pinging the whole catalog stays fast even on a cold link.
+# `ping` and `favicons` are plugin additions (not part of the original CLI,
+# which has neither a latency nor a provider-icon feature):
+#   - ping: one ICMP echo per address, run in parallel with a 1s timeout, so
+#     pinging the whole catalog stays fast even on a cold link.
+#   - favicons: fetches each domain's real favicon (DuckDuckGo's icon
+#     service — nothing bundled/redistributed) and caches it locally,
+#     returning a local file path only for a genuine icon. DuckDuckGo's
+#     service serves an identical ~1.4KB generic placeholder PNG for ANY
+#     domain it has no real icon for rather than failing — verified against
+#     a domain that cannot exist — so that exact response is detected by
+#     hash and reported as null (falls back to a generated badge) instead of
+#     being shown as if it were the provider's real logo.
 #
-# Dependencies: curl, jq, pkexec, ping (iputils).
+# Dependencies: curl, jq, pkexec, ping (iputils), md5sum (coreutils).
 
 set -o pipefail
 
 STORE_URL="https://raw.githubusercontent.com/DnsChanger/dnsChanger-desktop/store/servers_DB.json"
 DEFAULT_DNS=(1.1.1.1 8.8.8.8 192.168.1.1 127.0.0.1)
 CACHE_DIR="${DNS_CHANGER_CACHE_DIR:-$HOME/.cache/omarchy-dns-changer}"
-mkdir -p "$CACHE_DIR" 2>/dev/null || true
+FAVICON_DIR="$CACHE_DIR/favicons"
+mkdir -p "$CACHE_DIR" "$FAVICON_DIR" 2>/dev/null || true
+
+# The exact bytes DuckDuckGo's icon service returns for a domain it has no
+# real favicon for (md5 of a known-nonexistent domain's response, 2026-09-19).
+PLACEHOLDER_FAVICON_MD5="ab1fb25b83d4b333ea661a84bd298b2e"
 
 die() {
   printf '{"ok":false,"error":%s}\n' "$(jq -nc --arg m "$1" '$m')" >&2
@@ -148,6 +163,64 @@ cmd_ping() {
   printf '{"ok":true,"results":%s}\n' "$json"
 }
 
+domain_slug() {
+  printf '%s' "$1" | tr -c '0-9A-Za-z.' '_'
+}
+
+# Fetches, hash-checks against the placeholder, and caches one domain's
+# favicon; writes the local path to $2 only for a genuine icon (leaves $2
+# absent/empty otherwise). Runs backgrounded per-domain in cmd_favicons.
+fetch_one_favicon() {
+  local domain="$1" resultfile="$2"
+  local slug; slug="$(domain_slug "$domain")"
+  local cached="$FAVICON_DIR/$slug.ico"
+  if [ -s "$cached" ]; then
+    printf '%s' "$cached" >"$resultfile"
+    return
+  fi
+  local tmp; tmp="$(mktemp)"
+  if curl -fsS --max-time 8 "https://icons.duckduckgo.com/ip3/${domain}.ico" -o "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+    local hash; hash="$(md5sum "$tmp" | cut -d' ' -f1)"
+    if [ "$hash" != "$PLACEHOLDER_FAVICON_MD5" ]; then
+      mv "$tmp" "$cached"
+      printf '%s' "$cached" >"$resultfile"
+      return
+    fi
+  fi
+  rm -f "$tmp"
+}
+
+cmd_favicons() {
+  local domains=("$@")
+  if [ "${#domains[@]}" -eq 0 ]; then
+    printf '{"ok":true,"results":{}}\n'
+    return
+  fi
+
+  local tmpdir; tmpdir="$(mktemp -d)"
+  local d slug pids=()
+  for d in "${domains[@]}"; do
+    slug="$(domain_slug "$d")"
+    (fetch_one_favicon "$d" "$tmpdir/$slug.result") &
+    pids+=("$!")
+  done
+  local pid
+  for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null; done
+
+  local json="{}" path
+  for d in "${domains[@]}"; do
+    slug="$(domain_slug "$d")"
+    if [ -s "$tmpdir/$slug.result" ]; then
+      path="$(cat "$tmpdir/$slug.result")"
+      json="$(printf '%s' "$json" | jq -c --arg d "$d" --arg p "$path" '. + {($d): $p}')"
+    else
+      json="$(printf '%s' "$json" | jq -c --arg d "$d" '. + {($d): null}')"
+    fi
+  done
+  rm -rf "$tmpdir"
+  printf '{"ok":true,"results":%s}\n' "$json"
+}
+
 case "${1:-}" in
   active)        cmd_active ;;
   connect)       shift; cmd_connect "$@" ;;
@@ -155,5 +228,6 @@ case "${1:-}" in
   flush)         cmd_flush ;;
   fetch-servers) cmd_fetch_servers ;;
   ping)          shift; cmd_ping "$@" ;;
-  *) die "usage: dns-changer active | connect <ip> [ip2] | disconnect | flush | fetch-servers | ping <ip>..." ;;
+  favicons)      shift; cmd_favicons "$@" ;;
+  *) die "usage: dns-changer active | connect <ip> [ip2] | disconnect | flush | fetch-servers | ping <ip>... | favicons <domain>..." ;;
 esac

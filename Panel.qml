@@ -55,6 +55,12 @@ Panel {
   // servers sharing an address (several catalog entries do) share a result.
   property var pingResults: ({})
 
+  // domain -> local cached favicon path, or null once scripts/dns-changer
+  // favicons has confirmed there's no real icon (see its header comment for
+  // why this can't just be a direct URL: DuckDuckGo's icon service serves a
+  // generic placeholder instead of failing for an unknown domain).
+  property var faviconPaths: ({})
+
   onOpenedChanged: if (root.opened) Qt.callLater(function() { customField.text = root.customText })
 
   function open() {
@@ -62,6 +68,7 @@ Panel {
     root.refresh()
     root.fetchServers()
     root.pingServers()
+    root.fetchFavicons()
   }
 
   // ---- persistence: last-known active DNS, so the bar pill and header
@@ -190,6 +197,21 @@ Panel {
     pingProc.running = true
   }
 
+  // Resolves real favicons for servers that have a known domain (skips
+  // ones already resolved). Not part of the original CLI.
+  function fetchFavicons() {
+    if (faviconsProc.running) return
+    var seen = {}
+    var domains = []
+    for (var i = 0; i < root.servers.length; i++) {
+      var d = root.servers[i].domain
+      if (d && !seen[d] && !(d in root.faviconPaths)) { seen[d] = true; domains.push(d) }
+    }
+    if (domains.length === 0) return
+    faviconsProc.command = [root.scriptPath, "favicons"].concat(domains)
+    faviconsProc.running = true
+  }
+
   function moveCursor(d) {
     if (root.servers.length === 0) return
     root.cursor = Math.max(0, Math.min(root.servers.length - 1, root.cursor + d))
@@ -277,6 +299,7 @@ Panel {
             root.servers = Model.attachDomains(Model.sortByRate(parsed))
             root.persistServers()
             root.pingServers()
+            root.fetchFavicons()
           }
         } catch (e) {}
       }
@@ -304,12 +327,33 @@ Panel {
     }
   }
 
+  Process {
+    id: faviconsProc
+    running: false
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var raw = String(text || "").trim()
+        if (!raw) return
+        try {
+          var parsed = JSON.parse(raw)
+          if (parsed && parsed.ok && parsed.results) {
+            var merged = {}
+            for (var k in root.faviconPaths) merged[k] = root.faviconPaths[k]
+            for (var k2 in parsed.results) merged[k2] = parsed.results[k2]
+            root.faviconPaths = merged
+          }
+        } catch (e) {}
+      }
+    }
+  }
+
   Timer {
     interval: 300000
     running: true
     repeat: true
     triggeredOnStart: false
-    onTriggered: { root.refresh(); root.pingServers() }
+    onTriggered: { root.refresh(); root.pingServers(); root.fetchFavicons() }
   }
 
   // ================= UI =================
@@ -323,10 +367,11 @@ Panel {
     readonly property var pingMs: root.pingResults[primaryAddress]
     readonly property string pingText: Model.formatPing(pingMs)
     readonly property var badge: Model.badgeHsla(entry.key)
-    readonly property string faviconUrl: Model.faviconUrl(entry.domain)
-    // Real favicon (fetched at request time, never bundled) for the
-    // well-known providers Model.DOMAIN_BY_KEY covers; anything else, or a
-    // failed/slow load, falls back to the generated badge below.
+    // A local cached path once root.fetchFavicons() has confirmed a real
+    // icon exists for this domain (undefined = not resolved yet, null =
+    // confirmed no real icon — see scripts/dns-changer's header comment).
+    readonly property var faviconEntry: entry.domain ? root.faviconPaths[entry.domain] : null
+    readonly property string faviconPath: (typeof faviconEntry === "string") ? faviconEntry : ""
     property bool faviconFailed: false
 
     width: mainColumn.width
@@ -345,16 +390,17 @@ Panel {
       anchors.rightMargin: Style.space(10)
       height: Math.max(avatar.height, textCol.implicitHeight)
 
-      // Real favicon for well-known providers, fetched at request time from
-      // a third-party icon service — nothing is bundled or redistributed.
+      // Real favicon for well-known providers: root.fetchFavicons() already
+      // fetched it via scripts/dns-changer and rejected DuckDuckGo's
+      // generic placeholder, so any path here is a genuine icon.
       Image {
         id: favicon
-        visible: srow.faviconUrl !== "" && !srow.faviconFailed && status === Image.Ready
+        visible: srow.faviconPath !== "" && !srow.faviconFailed && status === Image.Ready
         width: Style.space(24)
         height: Style.space(24)
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
-        source: srow.faviconUrl
+        source: srow.faviconPath !== "" ? ("file://" + srow.faviconPath) : ""
         asynchronous: true
         smooth: true
         fillMode: Image.PreserveAspectFit
