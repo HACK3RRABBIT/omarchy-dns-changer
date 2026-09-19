@@ -20,20 +20,24 @@ panel instead of a terminal command.
   on open, on a 5-minute timer, or via **Ping all**. For well-known providers
   with a public site (Cloudflare, Google, Quad9, OpenDNS, Yandex, AdGuard,
   Norton, Level3, UltraDNS, CleanBrowsing, ControlD, dns0.eu, Shatel,
-  Irancell, Asiatech — see `Model.DOMAIN_BY_KEY`) that's their real favicon.
-  `scripts/dns-changer favicons` tries, in order: DuckDuckGo's icon service
-  (rejecting the identical generic placeholder it serves for a domain it has
-  no real icon for — verified against a domain that cannot exist, so a
-  wrong/blank icon is never shown as if it were real); the domain's own
-  `<link rel=icon>`, fetched with a browser User-Agent (plain requests get
-  307-looped by at least one site's bot mitigation); then its conventional
-  `/favicon.ico`. Nothing is bundled or redistributed. Every provider that
-  still has no result this way — currently **Shecan** (shecan.ir's CDN
-  redirect-loops every plain HTTP request, browser User-Agent included; this
-  needs a JS-executing browser to pass, out of scope here) and **DNS.WATCH**
-  (its own page links a `favicon.png` that itself 404s) — plus every
-  regional/gaming/niche entry with no identifiable official site, falls back
-  to a generated monogram badge (a deterministic color + initials). Click a
+  Irancell, Asiatech, Shecan — see `Model.DOMAIN_BY_KEY`) that's their real
+  icon, fetched at request time (nothing bundled or redistributed) — nothing
+  is ever shown as if it were a provider's real logo unless it genuinely is.
+  `scripts/dns-changer favicons` tries, per domain: a verified direct URL
+  where one's needed (currently just Shecan — shecan.ir's own CDN
+  redirect-loops every plain HTTP request regardless of path, subdomain, or
+  User-Agent, so its icon instead comes from its listing on Cafe Bazaar, the
+  official Iranian app store, which publishes it via a public CDN with no
+  such block); DuckDuckGo's icon service (rejecting the identical generic
+  placeholder it serves for a domain it has no real icon for — verified
+  against a domain that cannot exist); the domain's own `<link rel=icon>`,
+  fetched with a browser User-Agent; then its conventional `/favicon.ico`.
+  Every provider still unresolved this way — currently only **DNS.WATCH**
+  (its page links a `favicon.png` that itself 404s, and it has no
+  `apple-touch-icon`, manifest, or `og:image` either — genuinely nothing to
+  fall back to) — plus every regional/gaming/niche entry with no
+  identifiable official site, falls back to a generated monogram badge (a
+  deterministic color + initials). Click a
   row to connect — mirrors `d11i connect -n <name>`.
 - **Custom server** — type one or two addresses (comma-separated) and connect —
   mirrors `d11i connect -s <ip1>,<ip2>`, including the exact same validation

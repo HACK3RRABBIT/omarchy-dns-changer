@@ -50,6 +50,20 @@ mkdir -p "$CACHE_DIR" "$FAVICON_DIR" 2>/dev/null || true
 # real favicon for (md5 of a known-nonexistent domain's response, 2026-09-19).
 PLACEHOLDER_FAVICON_MD5="ab1fb25b83d4b333ea661a84bd298b2e"
 
+# Direct, verified icon URLs for domains where none of the automatic tiers
+# below can reach one. shecan.ir's own CDN (ArvanCloud) 307-redirect-loops
+# every plain HTTP request regardless of path, subdomain, or User-Agent —
+# a JS-executing browser is needed to pass it, out of scope for a bash
+# script. Their app's actual icon is reachable instead: cafebazaar.ir (the
+# official Iranian app store hosting co.bonyan.shecan, matching the
+# shecan-android GitHub org) publishes it via a public CDN with no such
+# block, exposed through that listing's own og:image meta tag — i.e. the
+# provider's own published icon for public display, not a scrape of an
+# unrelated third party. Verified live 2026-09-20.
+declare -A ICON_OVERRIDE_URL=(
+  ["shecan.ir"]="https://s.cafebazaar.ir/images/icons/co.bonyan.shecan_128x128.png"
+)
+
 die() {
   printf '{"ok":false,"error":%s}\n' "$(jq -nc --arg m "$1" '$m')" >&2
   printf '{"ok":false,"error":%s}\n' "$(jq -nc --arg m "$1" '$m')"
@@ -229,6 +243,12 @@ fetch_one_favicon() {
     printf '%s' "$cached" >"$resultfile"
     return
   fi
+
+  if [ -n "${ICON_OVERRIDE_URL[$domain]:-}" ] && fetch_image_url "${ICON_OVERRIDE_URL[$domain]}" "$cached"; then
+    printf '%s' "$cached" >"$resultfile"
+    return
+  fi
+
   local tmp; tmp="$(mktemp)"
   if curl -fsS --max-time 8 "https://icons.duckduckgo.com/ip3/${domain}.ico" -o "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
     local hash; hash="$(md5sum "$tmp" | cut -d' ' -f1)"
