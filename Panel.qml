@@ -325,7 +325,7 @@ Panel {
     readonly property var badge: Model.badgeHsla(entry.key)
 
     width: mainColumn.width
-    height: rowInner.implicitHeight + Style.space(12)
+    height: rowInner.height + Style.space(12)
     hasCursor: root.cursor === index
     current: isCurrent
     foreground: root.barForeground
