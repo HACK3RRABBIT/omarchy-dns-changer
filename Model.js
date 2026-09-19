@@ -92,7 +92,15 @@ var DOMAIN_BY_KEY = {
   SHECAN: "shecan.ir",
   ASIA_TECH: "asiatech.ir",
   Shatel: "shatel.ir",
-  Irancell: "irancell.ir"
+  Irancell: "irancell.ir",
+  // Radar Game is a real Iran Ministry of Communications gaming service
+  // whose own DNS addresses match this catalog entry exactly, and
+  // radar.game is its documented domain — but this couldn't be verified
+  // live (this dev sandbox can't resolve it, or several other unrelated
+  // hosts, right now). Included anyway: scripts/dns-changer falls back to
+  // the generated badge on any fetch failure, so a wrong/unreachable domain
+  // here costs nothing but is free to fix if it turns out stale.
+  RADAR_GAME: "radar.game"
 }
 
 function attachDomains(list) {
