@@ -3,6 +3,9 @@
 *.swp
 *~
 
+# Local Claude Code guidance — not part of the published plugin source.
+CLAUDE.md
+
 # Local runtime cache — the plugin writes here at runtime, not part of source.
 .cache/
 
