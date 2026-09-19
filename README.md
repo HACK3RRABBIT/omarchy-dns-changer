@@ -14,10 +14,14 @@ panel instead of a terminal command.
   opens the panel, middle-click refreshes.
 - **Servers** — the full DnsChanger catalog (Shecan, Zeus DNS, Electro Team,
   Cloudflare, Google, Quad9, OpenDNS, gaming and Fivem DNS, anti-sanction DNS,
-  ad blockers, ...), sorted by rating, fetched live from the same store the
-  desktop app uses and cached locally, with a bundled snapshot as an offline
-  fallback. Each row shows a provider icon and its live ping in ms, refreshed
-  on open, on a 5-minute timer, or via **Ping all**. For well-known providers
+  ad blockers, ...) plus your saved custom profiles, fetched live from the
+  same store the desktop app uses and cached locally, with a bundled snapshot
+  as an offline fallback. The list is sorted by live ping once measured
+  (fastest first; a timeout or not-yet-pinged entry sorts after every
+  measured one, tie-broken by the catalog's own rating) — not part of the
+  original CLI, which has no latency feature and only ever sorts by rating.
+  Each row shows a provider icon and its ping in ms, refreshed on open, on a
+  5-minute timer, or via **Ping all**. For well-known providers
   with a public site (Cloudflare, Google, Quad9, OpenDNS, Yandex, AdGuard,
   Norton, Level3, UltraDNS, CleanBrowsing, ControlD, dns0.eu, Shatel,
   Irancell, Asiatech, Shecan — see `Model.DOMAIN_BY_KEY`) that's their real
@@ -37,11 +41,19 @@ panel instead of a terminal command.
   `apple-touch-icon`, manifest, or `og:image` either — genuinely nothing to
   fall back to) — plus every regional/gaming/niche entry with no
   identifiable official site, falls back to a generated monogram badge (a
-  deterministic color + initials). Click a
-  row to connect — mirrors `d11i connect -n <name>`.
-- **Custom server** — type one or two addresses (comma-separated) and connect —
-  mirrors `d11i connect -s <ip1>,<ip2>`, including the exact same validation
-  and the "unlisted address becomes a `custom-<ip>` entry" behavior.
+  deterministic color + initials). Click a row to connect — mirrors
+  `d11i connect -n <name>`.
+- **Custom server** — type one or two addresses (comma-separated) and hit
+  **Connect** for a one-off connection — mirrors `d11i connect -s
+  <ip1>,<ip2>`, including the exact same validation and the "unlisted
+  address becomes a `custom-<ip>` entry" behavior. This connection isn't
+  saved; retype it next time, or use a profile instead.
+- **Custom profiles** — not part of the original CLI (its `-s` flag connects
+  to a synthetic, unsaved entry every time): give the address above a name
+  and hit **Save profile** to keep it. Saved profiles appear in the Servers
+  list like any catalog entry — pinged, sorted, click to reconnect — with a
+  ✕ to remove them. Persisted to
+  `~/.cache/omarchy-dns-changer/custom-profiles.json`, survives restarts.
 - **Random** — connect to a random catalog server — mirrors `d11i connect -r`.
 - **Disconnect** — resets to the CLI's own Linux defaults
   (`1.1.1.1, 8.8.8.8, 192.168.1.1, 127.0.0.1`) — mirrors `d11i disconnect`

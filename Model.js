@@ -159,6 +159,70 @@ function customServer(addresses) {
   }
 }
 
+// --- Custom profiles ---------------------------------------------------------
+//
+// Saved, named custom servers. Not part of the original CLI (its -s flag
+// connects to a synthetic customServer() but never persists it); a plugin
+// addition so a hand-entered address can be reused instead of retyped.
+
+function makeCustomProfile(name, addresses) {
+  var n = String(name || "").trim() || ("custom-" + addresses[0])
+  return {
+    key: "profile-" + addresses.join("-"),
+    name: n,
+    servers: addresses.slice(),
+    rate: 0,
+    tags: ["custom"],
+    isCustomProfile: true
+  }
+}
+
+function loadCustomProfiles(raw) {
+  var list
+  try { list = JSON.parse(String(raw || "[]")) } catch (e) { return [] }
+  if (!Array.isArray(list)) return []
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var p = list[i]
+    if (p && Array.isArray(p.servers) && p.servers.length > 0) out.push(makeCustomProfile(p.name, p.servers))
+  }
+  return out
+}
+
+// Add/replace-by-address, returns the new array (caller persists it).
+function upsertCustomProfile(list, name, addresses) {
+  var want = addresses.join(",")
+  var out = (list || []).filter(function (p) { return (p.servers || []).join(",") !== want })
+  out.push(makeCustomProfile(name, addresses))
+  return out
+}
+
+function removeCustomProfile(list, key) {
+  return (list || []).filter(function (p) { return p.key !== key })
+}
+
+// --- Ping-based sort -------------------------------------------------------
+//
+// Not part of the original CLI (it has no latency feature). Ascending by
+// ping; a timeout (null) or not-yet-pinged (undefined) entry sorts after
+// every measured one, tie-broken by rate desc so the list doesn't look
+// randomly shuffled before pings land.
+function sortByPing(list, pingResults) {
+  var results = pingResults || {}
+  function pingOf(s) {
+    var ip = s.servers && s.servers[0]
+    return ip ? results[ip] : undefined
+  }
+  return (list || []).slice().sort(function (a, b) {
+    var pa = pingOf(a), pb = pingOf(b)
+    var aKnown = typeof pa === "number", bKnown = typeof pb === "number"
+    if (aKnown && bKnown) return pa - pb
+    if (aKnown) return -1
+    if (bKnown) return 1
+    return (b.rate || 0) - (a.rate || 0)
+  })
+}
+
 function randomServer(list) {
   if (!list || list.length === 0) return null
   return list[Math.floor(Math.random() * list.length)]

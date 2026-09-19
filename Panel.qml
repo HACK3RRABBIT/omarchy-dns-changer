@@ -42,12 +42,20 @@ Panel {
   readonly property color connectedColor: "#22c55e"
 
   property var servers: Model.bundledServers()
+  // Saved, named custom servers — not part of the original CLI (its -s flag
+  // connects to a synthetic customServer() but never persists it).
+  property var customProfiles: []
+  // Catalog + saved profiles, sorted by live ping once available (falls
+  // back to rate order for anything not yet pinged) — this drives the
+  // visible list and keyboard cursor.
+  readonly property var displayServers: Model.sortByPing(root.customProfiles.concat(root.servers), root.pingResults)
   property var activeIps: []
-  readonly property var status: Model.statusOf(root.activeIps, root.servers)
+  readonly property var status: Model.statusOf(root.activeIps, root.displayServers)
   property bool busy: false
   property string message: ""
   property string errorText: ""
   property string customText: ""
+  property string profileNameText: ""
   property int cursor: 0
 
   // ip -> latency in ms, or null for a timeout. Not part of the original
@@ -61,7 +69,10 @@ Panel {
   // generic placeholder instead of failing for an unknown domain).
   property var faviconPaths: ({})
 
-  onOpenedChanged: if (root.opened) Qt.callLater(function() { customField.text = root.customText })
+  onOpenedChanged: if (root.opened) Qt.callLater(function() {
+    customField.text = root.customText
+    profileNameField.text = root.profileNameText
+  })
 
   function open() {
     root.controller.show()
@@ -87,6 +98,13 @@ Panel {
     atomicWrites: true
     printErrors: false
     onLoaded: root.restoreServers()
+  }
+  property FileView customProfilesFile: FileView {
+    path: Quickshell.env("HOME") + "/.cache/omarchy-dns-changer/custom-profiles.json"
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.restoreCustomProfiles()
   }
 
   function persistState() {
@@ -114,9 +132,16 @@ Panel {
       if (Array.isArray(list) && list.length) root.servers = Model.attachDomains(Model.sortByRate(list))
     } catch (e) {}
   }
+  function persistCustomProfiles() {
+    try { customProfilesFile.setText(JSON.stringify(root.customProfiles)) } catch (e) {}
+  }
+  function restoreCustomProfiles() {
+    try { root.customProfiles = Model.loadCustomProfiles(customProfilesFile.text()) } catch (e) {}
+    root.pushStatusToHost()
+  }
   function pushStatusToHost() {
     if (root.hostWidget && typeof root.hostWidget.setStatusState === "function")
-      root.hostWidget.setStatusState(Model.statusOf(root.activeIps, root.servers))
+      root.hostWidget.setStatusState(Model.statusOf(root.activeIps, root.displayServers))
   }
   onActiveIpsChanged: { root.persistState(); root.pushStatusToHost() }
 
@@ -156,8 +181,29 @@ Panel {
   function connectCustom() {
     var parsed = Model.parseAddressList(root.customText)
     if (!parsed.ok) { root.errorText = parsed.error; return }
-    var existing = Model.serverByAddresses(root.servers, parsed.addresses)
+    var existing = Model.serverByAddresses(root.displayServers, parsed.addresses)
     root.connectServer(existing || Model.customServer(parsed.addresses))
+  }
+
+  // Saves a named custom profile (persists across restarts, shown in the
+  // list, pingable, deletable) and connects to it. Not part of the
+  // original CLI — its -s flag connects to a synthetic customServer() but
+  // never saves it.
+  function saveCustomProfile() {
+    var parsed = Model.parseAddressList(root.customText)
+    if (!parsed.ok) { root.errorText = parsed.error; return }
+    root.customProfiles = Model.upsertCustomProfile(root.customProfiles, root.profileNameText, parsed.addresses)
+    root.persistCustomProfiles()
+    var saved = Model.serverByAddresses(root.customProfiles, parsed.addresses)
+    root.profileNameText = ""
+    profileNameField.text = ""
+    root.pingServers()
+    root.connectServer(saved)
+  }
+
+  function removeCustomProfile(key) {
+    root.customProfiles = Model.removeCustomProfile(root.customProfiles, key)
+    root.persistCustomProfiles()
   }
 
   function connectRandom() {
@@ -188,8 +234,8 @@ Panel {
     if (pingProc.running) return
     var seen = {}
     var ips = []
-    for (var i = 0; i < root.servers.length; i++) {
-      var ip = root.servers[i].servers[0]
+    for (var i = 0; i < root.displayServers.length; i++) {
+      var ip = root.displayServers[i].servers[0]
       if (ip && !seen[ip]) { seen[ip] = true; ips.push(ip) }
     }
     if (ips.length === 0) return
@@ -213,11 +259,11 @@ Panel {
   }
 
   function moveCursor(d) {
-    if (root.servers.length === 0) return
-    root.cursor = Math.max(0, Math.min(root.servers.length - 1, root.cursor + d))
+    if (root.displayServers.length === 0) return
+    root.cursor = Math.max(0, Math.min(root.displayServers.length - 1, root.cursor + d))
   }
   function activateCursor() {
-    if (root.cursor >= 0 && root.cursor < root.servers.length) root.connectServer(root.servers[root.cursor])
+    if (root.cursor >= 0 && root.cursor < root.displayServers.length) root.connectServer(root.displayServers[root.cursor])
   }
 
   // ---- processes ----
@@ -363,6 +409,7 @@ Panel {
     required property int index
 
     readonly property bool isCurrent: root.status.state === "known" && root.status.server && root.status.server.key === entry.key
+    readonly property bool isCustom: !!entry.isCustomProfile
     readonly property string primaryAddress: (entry.servers && entry.servers[0]) || ""
     readonly property var pingMs: root.pingResults[primaryAddress]
     readonly property string pingText: Model.formatPing(pingMs)
@@ -431,12 +478,28 @@ Panel {
         }
       }
 
+      // Remove button for saved custom profiles only — catalog entries
+      // aren't user-owned data and can't be deleted.
+      PanelActionButton {
+        id: removeBtn
+        visible: srow.isCustom
+        z: 1
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        iconText: "✕"
+        tooltipText: "Remove profile"
+        foreground: root.barForeground
+        hoverColor: Color.urgent
+        onClicked: root.removeCustomProfile(srow.entry.key)
+      }
+
       Column {
         id: textCol
         anchors.left: avatar.right
-        anchors.right: parent.right
+        anchors.right: srow.isCustom ? removeBtn.left : parent.right
         anchors.verticalCenter: parent.verticalCenter
         anchors.leftMargin: Style.space(8)
+        anchors.rightMargin: srow.isCustom ? Style.space(4) : 0
         spacing: Style.space(1)
 
         Text {
@@ -485,7 +548,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: customField.activeFocus
+      blocked: customField.activeFocus || profileNameField.activeFocus
       onCloseRequested: root.close()
       onMoveRequested: function (dx, dy) { root.moveCursor(dy) }
       onActivateRequested: root.activateCursor()
@@ -571,9 +634,9 @@ Panel {
 
           PanelSeparator { foreground: root.barForeground }
 
-          // ---- SERVERS ----
+          // ---- SERVERS (catalog + saved custom profiles, ping-sorted) ----
           PanelSectionHeader {
-            text: "Servers (" + root.servers.length + ")"
+            text: "Servers (" + root.displayServers.length + ")"
             foreground: root.barForeground
           }
 
@@ -582,7 +645,7 @@ Panel {
             spacing: Style.space(2)
 
             Repeater {
-              model: root.servers
+              model: root.displayServers
               delegate: ServerRow {
                 required property var modelData
                 entry: modelData
@@ -619,6 +682,33 @@ Panel {
               enabled: !root.busy
               foreground: root.barForeground
               onClicked: root.connectCustom()
+            }
+          }
+
+          // Saves the address above as a named, reusable profile — shown in
+          // the Servers list (pingable, deletable) instead of retyped every
+          // time. Not part of the original CLI.
+          Row {
+            width: parent.width
+            spacing: Style.space(8)
+
+            TextField {
+              id: profileNameField
+              width: parent.width - saveProfileBtn.width - Style.space(8)
+              placeholderText: "Profile name (optional) — saves the address above"
+              foreground: root.barForeground
+              onTextChanged: root.profileNameText = text
+              onAccepted: root.saveCustomProfile()
+              onActiveFocusChanged: root.setCenterHoverRevealSuppressed(activeFocus)
+            }
+            Button {
+              id: saveProfileBtn
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Save profile"
+              bordered: true
+              enabled: !root.busy && root.customText.trim() !== ""
+              foreground: root.barForeground
+              onClicked: root.saveCustomProfile()
             }
           }
 
